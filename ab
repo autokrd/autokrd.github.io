@@ -1,3 +1,391 @@
-$bat="$env:TEMP\ab.bat"
-Invoke-WebRequest "https://autokrd.github.io/ab.bat" -OutFile $bat
-& $bat
+#Requires -RunAsAdministrator
+
+<#
+.SYNOPSIS
+    Block Adobe executables from outbound network connections
+.DESCRIPTION
+    PowerShell version of Adobe Firewall Blocker with menu interface
+    Run as Administrator - COMPLETE VERSION
+.NOTES
+    Converted from batch script to PowerShell
+#>
+
+# Check if running as administrator
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Host "[ERROR] This script must be run as Administrator." -ForegroundColor Red
+    Write-Host "Right-click the .ps1 file and choose 'Run with PowerShell' as Administrator." -ForegroundColor Red
+    Write-Host ""
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+# Setup log file
+$LogFile = Join-Path $PSScriptRoot "adobe_firewall_block.log"
+$LogEntry = ("=" * 50) + "`n=== Run $(Get-Date) ===`n"
+Add-Content -Path $LogFile -Value $LogEntry
+
+# Function to write to log
+function Write-Log {
+    param([string]$Message)
+    Add-Content -Path $LogFile -Value $Message
+}
+
+# Function to display menu
+function Show-Menu {
+    Clear-Host
+    Write-Host ("=" * 50) -ForegroundColor Cyan
+    Write-Host "    Adobe Firewall Blocker" -ForegroundColor Cyan
+    Write-Host ("=" * 50) -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Choose an option:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "[1] Block MAIN Adobe apps only (Photoshop, Illustrator, etc.)" -ForegroundColor White
+    Write-Host "[2] Block ALL .exe files in Adobe directories (complete block)" -ForegroundColor White
+    Write-Host "[3] View all Adobe firewall rules" -ForegroundColor White
+    Write-Host "[4] Remove all Adobe firewall blocks" -ForegroundColor White
+    Write-Host "[5] Exit" -ForegroundColor White
+    Write-Host ""
+}
+
+# Function to block main Adobe applications
+function Block-MainApps {
+    Write-Host ""
+    Write-Host ("=" * 50) -ForegroundColor Green
+    Write-Host "Option 1: Blocking main Adobe applications only..." -ForegroundColor Green
+    Write-Host ("=" * 50) -ForegroundColor Green
+    Write-Host ""
+    
+    Write-Log "[MODE] Main Apps Only"
+    
+    # List of known main Adobe executables
+    $Targets = @(
+        "Photoshop.exe", "Illustrator.exe", "AfterFX.exe", "MediaEncoder.exe", 
+        "Acrobat.exe", "AcroRd32.exe", "InDesign.exe", "Premiere.exe", 
+        "PremierePro.exe", "Audition.exe", "Bridge.exe", "Animate.exe", 
+        "CharacterAnimator.exe", "Lightroom.exe", "LightroomClassic.exe", 
+        "Dreamweaver.exe", "Dimension.exe", "Fresco.exe", "XD.exe", 
+        "InCopy.exe", "Prelude.exe", "Rush.exe", "SpeedGrade.exe"
+    )
+    
+    $Count = 0
+    
+    # Adobe directories to search
+    $AdobeDirectories = @(
+        "${env:ProgramFiles}\Adobe",
+        "${env:ProgramFiles(x86)}\Adobe",
+        "${env:ProgramData}\Adobe",
+        "${env:ProgramFiles}\Common Files\Adobe",
+        "${env:ProgramFiles(x86)}\Common Files\Adobe"
+    )
+    
+    foreach ($Directory in $AdobeDirectories) {
+        if (Test-Path $Directory) {
+            Write-Host ""
+            Write-Host "[SCAN] Searching recursively in: $Directory" -ForegroundColor Cyan
+            Write-Host "       Looking for main Adobe apps..." -ForegroundColor Cyan
+            
+            # Get all .exe files recursively
+            $ExeFiles = Get-ChildItem -Path $Directory -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
+            
+            foreach ($ExeFile in $ExeFiles) {
+                $FileName = $ExeFile.Name
+                $FullPath = $ExeFile.FullName
+                
+                # Check if this exe is in our target list
+                if ($Targets -contains $FileName) {
+                    try {
+                        # Remove any existing outbound rules for this executable
+                        $deleteResult = & netsh advfirewall firewall delete rule name=all program="$FullPath" dir=out 2>&1
+                        
+                        # Add block rule using netsh (more reliable than PowerShell cmdlets)
+                        $addResult = & netsh advfirewall firewall add rule name="Block Adobe - $FileName" dir=out action=block program="$FullPath" enable=yes profile=any 2>&1
+                        
+                        if ($LASTEXITCODE -eq 0) {
+                            Write-Host "[BLOCKED] $FileName at $FullPath" -ForegroundColor Green
+                            Write-Log "[BLOCKED] $FullPath"
+                            $Count++
+                        }
+                        else {
+                            Write-Host "[WARN] Failed to block: $FileName - $addResult" -ForegroundColor Yellow
+                            Write-Log "[WARN] Failed: $FullPath - $addResult"
+                        }
+                    }
+                    catch {
+                        Write-Host "[WARN] Failed to block: $FileName - $($_.Exception.Message)" -ForegroundColor Yellow
+                        Write-Log "[WARN] Failed: $FullPath - $($_.Exception.Message)"
+                    }
+                }
+            }
+        }
+        else {
+            Write-Host "[SKIP] Directory not found: $Directory" -ForegroundColor Yellow
+        }
+    }
+    
+    Show-Summary $Count
+}
+
+# Function to block all executables
+function Block-AllExes {
+    Write-Host ""
+    Write-Host ("=" * 50) -ForegroundColor Red
+    Write-Host "Option 2: Blocking ALL .exe files in Adobe directories..." -ForegroundColor Red
+    Write-Host ("=" * 50) -ForegroundColor Red
+    Write-Host ""
+    Write-Host "WARNING: This will block EVERY executable in Adobe folders!" -ForegroundColor Red
+    Write-Host "Press Ctrl+C to cancel, or"
+    Read-Host "Press Enter to continue"
+    
+    Write-Log "[MODE] All Executables"
+    $Count = 0
+    
+    # Adobe directories to search (including Creative Cloud)
+    $AdobeDirectories = @(
+        "${env:ProgramFiles}\Adobe",
+        "${env:ProgramFiles(x86)}\Adobe",
+        "${env:ProgramData}\Adobe",
+        "${env:ProgramFiles}\Common Files\Adobe",
+        "${env:ProgramFiles(x86)}\Common Files\Adobe",
+        "${env:ProgramFiles}\Adobe Creative Cloud",
+        "${env:ProgramFiles(x86)}\Adobe Creative Cloud"
+    )
+    
+    # Files to skip
+    $SkipFiles = @("unins000.exe", "unins001.exe", "uninstall.exe", "uninst.exe")
+    
+    foreach ($Directory in $AdobeDirectories) {
+        if (Test-Path $Directory) {
+            Write-Host ""
+            Write-Host "[SCAN] Searching ALL .exe files recursively in: $Directory" -ForegroundColor Cyan
+            
+            # Get all .exe files recursively
+            $ExeFiles = Get-ChildItem -Path $Directory -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue
+            
+            foreach ($ExeFile in $ExeFiles) {
+                $FileName = $ExeFile.Name
+                $FullPath = $ExeFile.FullName
+                
+                # Skip certain system/common files
+                if ($SkipFiles -contains $FileName) {
+                    Write-Host "[SKIP] Uninstaller: $FileName" -ForegroundColor Yellow
+                    continue
+                }
+                
+                try {
+                    # Remove any existing outbound rules for this executable
+                    $deleteResult = & netsh advfirewall firewall delete rule name=all program="$FullPath" dir=out 2>&1
+                    
+                    # Add block rule using netsh (more reliable than PowerShell cmdlets)
+                    $addResult = & netsh advfirewall firewall add rule name="Block Adobe - $FileName" dir=out action=block program="$FullPath" enable=yes profile=any 2>&1
+                    
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "[BLOCKED] $FileName" -ForegroundColor Green
+                        Write-Host "          Path: $FullPath" -ForegroundColor Gray
+                        Write-Log "[BLOCKED] $FullPath"
+                        $Count++
+                    }
+                    else {
+                        Write-Host "[WARN] Failed to block: $FileName - $addResult" -ForegroundColor Yellow
+                        Write-Log "[WARN] Failed: $FullPath - $addResult"
+                    }
+                }
+                catch {
+                    Write-Host "[WARN] Failed to block: $FileName - $($_.Exception.Message)" -ForegroundColor Yellow
+                    Write-Log "[WARN] Failed: $FullPath - $($_.Exception.Message)"
+                }
+            }
+        }
+        else {
+            Write-Host "[SKIP] Directory not found: $Directory" -ForegroundColor Yellow
+        }
+    }
+    
+    Show-Summary $Count
+}
+
+# Function to view all Adobe firewall rules
+function View-Rules {
+    Clear-Host
+    Write-Host ("=" * 50) -ForegroundColor Cyan
+    Write-Host "    Viewing All Adobe Firewall Rules" -ForegroundColor Cyan
+    Write-Host ("=" * 50) -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Fetching all 'Block Adobe' rules..." -ForegroundColor Yellow
+    Write-Host ""
+    
+    # Get all firewall rules and filter for Adobe blocks
+    $allRules = & netsh advfirewall firewall show rule name=all 2>&1
+    $adobeRuleLines = $allRules | Where-Object { $_ -match "Rule Name:.*Block Adobe" }
+    $RuleCount = $adobeRuleLines.Count
+    
+    Write-Host "Found $RuleCount Adobe blocking rules:" -ForegroundColor Green
+    Write-Host ("-" * 44) -ForegroundColor Gray
+    Write-Host ""
+    
+    if ($RuleCount -gt 0) {
+        foreach ($ruleLine in $adobeRuleLines) {
+            if ($ruleLine -match "Rule Name:\s*(.*)") {
+                $ruleName = $matches[1].Trim()
+                Write-Host "Rule: $ruleName" -ForegroundColor White
+                
+                # Get detailed info for this specific rule
+                $ruleDetails = & netsh advfirewall firewall show rule name="$ruleName" 2>&1
+                $programLine = $ruleDetails | Where-Object { $_ -match "Program:" }
+                $directionLine = $ruleDetails | Where-Object { $_ -match "Direction:" }
+                $actionLine = $ruleDetails | Where-Object { $_ -match "Action:" }
+                $enabledLine = $ruleDetails | Where-Object { $_ -match "Enabled:" }
+                
+                if ($programLine) { Write-Host "  $programLine" -ForegroundColor Gray }
+                if ($directionLine) { Write-Host "  $directionLine" -ForegroundColor Gray }
+                if ($actionLine) { Write-Host "  $actionLine" -ForegroundColor Gray }
+                if ($enabledLine) { Write-Host "  $enabledLine" -ForegroundColor Gray }
+                Write-Host ""
+            }
+        }
+    }
+    else {
+        Write-Host "No Adobe firewall rules found." -ForegroundColor Yellow
+    }
+    
+    Write-Host ("-" * 44) -ForegroundColor Gray
+    Write-Host "Total Adobe rules: $RuleCount" -ForegroundColor Green
+    Write-Host ""
+    Read-Host "Press Enter to continue"
+}
+
+# Function to remove all Adobe firewall blocks
+function Remove-Rules {
+    Clear-Host
+    Write-Host ("=" * 50) -ForegroundColor Red
+    Write-Host "    Remove All Adobe Firewall Blocks" -ForegroundColor Red
+    Write-Host ("=" * 50) -ForegroundColor Red
+    Write-Host ""
+    Write-Host "WARNING: This will remove ALL Adobe firewall blocking rules!" -ForegroundColor Red
+    Write-Host ""
+    
+    $Confirm = Read-Host "Type YES to confirm (or anything else to cancel)"
+    
+    if ($Confirm -ne "YES") {
+        Write-Host ""
+        Write-Host "Operation cancelled." -ForegroundColor Yellow
+        Read-Host "Press Enter to continue"
+        return
+    }
+    
+    Write-Host ""
+    Write-Host "Removing all Adobe firewall blocking rules..." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Log "[MODE] Remove All Rules"
+    
+    $Removed = 0
+    
+    # Get all firewall rules and filter for Adobe blocks
+    $allRules = & netsh advfirewall firewall show rule name=all 2>&1
+    $adobeRuleLines = $allRules | Where-Object { $_ -match "Rule Name:.*Block Adobe" }
+    
+    foreach ($ruleLine in $adobeRuleLines) {
+        if ($ruleLine -match "Rule Name:\s*(.*)") {
+            $ruleName = $matches[1].Trim()
+            try {
+                Write-Host "[REMOVING] $ruleName" -ForegroundColor Yellow
+                $deleteResult = & netsh advfirewall firewall delete rule name="$ruleName" 2>&1
+                
+                if ($LASTEXITCODE -eq 0) {
+                    $Removed++
+                    Write-Log "[REMOVED] $ruleName"
+                }
+                else {
+                    Write-Host "[WARN] Failed to remove: $ruleName - $deleteResult" -ForegroundColor Red
+                    Write-Log "[WARN] Failed to remove: $ruleName - $deleteResult"
+                }
+            }
+            catch {
+                Write-Host "[WARN] Failed to remove: $ruleName - $($_.Exception.Message)" -ForegroundColor Red
+                Write-Log "[WARN] Failed to remove: $ruleName - $($_.Exception.Message)"
+            }
+        }
+    }
+    
+    Write-Host ""
+    Write-Host ("=" * 50) -ForegroundColor Green
+    Write-Host "  Removal Summary:" -ForegroundColor Green
+    Write-Host "    Total rules removed: $Removed" -ForegroundColor Green
+    Write-Host ("=" * 50) -ForegroundColor Green
+    Write-Host ""
+    Read-Host "Press Enter to continue"
+}
+
+# Function to show summary after blocking
+function Show-Summary {
+    param([int]$Count)
+    
+    Write-Host ""
+    Write-Host ("=" * 50) -ForegroundColor Green
+    Write-Host "  Summary:" -ForegroundColor Green
+    Write-Host "    Total executables blocked: $Count" -ForegroundColor Green
+    Write-Host "    Log file: $LogFile" -ForegroundColor Green
+    Write-Host ("=" * 50) -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Recent blocks from this run:" -ForegroundColor Yellow
+    Write-Host ""
+    
+    $Today = Get-Date -Format "MM/dd/yyyy"
+    $RecentBlocks = Get-Content $LogFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "\[BLOCKED\]" -and $_ -match $Today }
+    
+    if ($RecentBlocks) {
+        $RecentBlocks | ForEach-Object { Write-Host $_ -ForegroundColor Gray }
+    }
+    else {
+        Write-Host "(No new blocks recorded this run)" -ForegroundColor Yellow
+    }
+    
+    Write-Host ""
+    Read-Host "Press Enter to continue"
+}
+
+# Function to show exit information
+function Show-Exit {
+    Clear-Host
+    Write-Host ("=" * 50) -ForegroundColor Cyan
+    Write-Host "    Adobe Firewall Blocker - Goodbye" -ForegroundColor Cyan
+    Write-Host ("=" * 50) -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Current status:" -ForegroundColor Yellow
+    Write-Host ""
+    
+    $allRules = & netsh advfirewall firewall show rule name=all 2>&1
+    $adobeRuleLines = $allRules | Where-Object { $_ -match "Rule Name:.*Block Adobe" }
+    $CurrentRules = $adobeRuleLines.Count
+    Write-Host "Active Adobe blocking rules: $CurrentRules" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Log file saved at: $LogFile" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "To manage rules manually:" -ForegroundColor Yellow
+    Write-Host "- Open Windows Defender Firewall with Advanced Security" -ForegroundColor Gray
+    Write-Host "- Check Outbound Rules for 'Block Adobe' entries" -ForegroundColor Gray
+    Write-Host ""
+    Read-Host "Press Enter to exit"
+}
+
+# Main script loop
+do {
+    Show-Menu
+    $Choice = Read-Host "Enter your choice (1-5)"
+    
+    switch ($Choice) {
+        "1" { Block-MainApps }
+        "2" { Block-AllExes }
+        "3" { View-Rules }
+        "4" { Remove-Rules }
+        "5" { 
+            Show-Exit
+            break 
+        }
+        default { 
+            Write-Host "Invalid choice. Please try again." -ForegroundColor Red
+            Read-Host "Press Enter to continue"
+        }
+    }
+} while ($Choice -ne "5")
+
+Write-Host "Script completed." -ForegroundColor Green

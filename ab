@@ -20,7 +20,17 @@ if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 }
 
 # Setup log file
-$LogFile = Join-Path $PSScriptRoot "adobe_firewall_block.log"
+if ($PSScriptRoot) {
+    $LogFile = Join-Path $PSScriptRoot "adobe_firewall_block.log"
+} else {
+    # Fallback for when script is run without .ps1 extension
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+    if ($ScriptDir) {
+        $LogFile = Join-Path $ScriptDir "adobe_firewall_block.log"
+    } else {
+        $LogFile = Join-Path (Get-Location) "adobe_firewall_block.log"
+    }
+}
 $LogEntry = ("=" * 50) + "`n=== Run $(Get-Date) ===`n"
 Add-Content -Path $LogFile -Value $LogEntry
 

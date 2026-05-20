@@ -84,8 +84,32 @@ if (-not $currentPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRol
 
 # --- Banner ------------------------------------------------------------------
 
+function Show-Branding {
+    $banner = @"
+
+    ╔══════════════════════════════════════════════════════════╗
+    ║                                                          ║
+    ║      █████╗ ███╗   ███╗ █████╗ ███╗   ██╗     ██╗        ║
+    ║     ██╔══██╗████╗ ████║██╔══██╗████╗  ██║     ██║        ║
+    ║     ███████║██╔████╔██║███████║██╔██╗ ██║     ██║        ║
+    ║     ██╔══██║██║╚██╔╝██║██╔══██║██║╚██╗██║██   ██║        ║
+    ║     ██║  ██║██║ ╚═╝ ██║██║  ██║██║ ╚████║╚█████╔╝        ║
+    ║     ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚════╝         ║
+    ║                                                          ║
+    ║                  S O F T W A R E                         ║
+    ║                                                          ║
+    ╚══════════════════════════════════════════════════════════╝
+
+"@
+    Write-Host $banner -ForegroundColor Cyan
+    Write-Host "        Restart-Service-On-Logon  Task Registrar" -ForegroundColor White
+    Write-Host "        ----------------------------------------" -ForegroundColor DarkGray
+    Write-Host "        (c) Amanj Software" -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 Clear-Host
-Write-Header "Restart-Service-On-Logon  Task Registrar"
+Show-Branding
 
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $userSid  = $identity.User.Value
@@ -217,6 +241,8 @@ try {
     Write-Host ""
     Write-KV "Triggers on"  "Logon of $userName, after $DelaySeconds sec"
     Write-KV "Will run"     "sc stop -> wait $WaitSeconds sec -> sc start  ($ServiceName)"
+    Write-Host ""
+    Write-Host "  -- Amanj Software --" -ForegroundColor DarkCyan
     Write-Host ""
 }
 catch {

@@ -85,26 +85,15 @@ if (-not $currentPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRol
 # --- Banner ------------------------------------------------------------------
 
 function Show-Branding {
-    $banner = @"
-
-    ╔══════════════════════════════════════════════════════════╗
-    ║                                                          ║
-    ║      █████╗ ███╗   ███╗ █████╗ ███╗   ██╗     ██╗        ║
-    ║     ██╔══██╗████╗ ████║██╔══██╗████╗  ██║     ██║        ║
-    ║     ███████║██╔████╔██║███████║██╔██╗ ██║     ██║        ║
-    ║     ██╔══██║██║╚██╔╝██║██╔══██║██║╚██╗██║██   ██║        ║
-    ║     ██║  ██║██║ ╚═╝ ██║██║  ██║██║ ╚████║╚█████╔╝        ║
-    ║     ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝ ╚════╝         ║
-    ║                                                          ║
-    ║                  S O F T W A R E                         ║
-    ║                                                          ║
-    ╚══════════════════════════════════════════════════════════╝
-
-"@
-    Write-Host $banner -ForegroundColor Cyan
-    Write-Host "        Restart-Service-On-Logon  Task Registrar" -ForegroundColor White
-    Write-Host "        ----------------------------------------" -ForegroundColor DarkGray
-    Write-Host "        (c) Amanj Software" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  +--------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  |" -ForegroundColor Cyan -NoNewline
+    Write-Host "             A M A N J   S O F T W A R E            " -ForegroundColor White -NoNewline
+    Write-Host "|" -ForegroundColor Cyan
+    Write-Host "  |" -ForegroundColor Cyan -NoNewline
+    Write-Host "       Restart-Service-On-Logon Task Registrar      " -ForegroundColor Gray -NoNewline
+    Write-Host "|" -ForegroundColor Cyan
+    Write-Host "  +--------------------------------------------------+" -ForegroundColor Cyan
     Write-Host ""
 }
 
@@ -242,7 +231,7 @@ try {
     Write-KV "Triggers on"  "Logon of $userName, after $DelaySeconds sec"
     Write-KV "Will run"     "sc stop -> wait $WaitSeconds sec -> sc start  ($ServiceName)"
     Write-Host ""
-    Write-Host "  -- Amanj Software --" -ForegroundColor DarkCyan
+    Write-Host "  --- Amanj Software ---" -ForegroundColor DarkCyan
     Write-Host ""
 }
 catch {
